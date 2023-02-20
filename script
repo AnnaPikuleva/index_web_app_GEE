@@ -1,0 +1,937 @@
+//боковая панель
+ui.root.clear();
+var panel = ui.Panel({style: {width: &#39;350px&#39;}});
+var map = ui.Map();
+ui.root.add(panel).add(map);
+map.setCenter(50, 55, 3);
+map.style().set(&#39;cursor&#39;, &#39;crosshair&#39;);
+//панель заголовка
+var panel_main = ui.Panel({style: {height:&#39;50px&#39; , width: &#39;550px&#39; , position :&#39;top-center&#39;}});
+map.add(panel_main)
+var zagolovok = ui.Label(
+{ value:&#39;Определение вегетационных индексов по снимкам спекторметра MODIS&#39;,
+style: {fontWeight: &#39;bold&#39;, textAlign: &#39;left&#39;, stretch: &#39;horizontal&#39;}})
+panel_main.add(zagolovok)
+// Определили константы
+var NDVI = &#39;NDVI&#39;;
+var MSAVI = &#39;MSAVI&#39;;
+var ARVI = &#39;ARVI&#39;;
+var EVI = &#39;EVI&#39;;
+var GCI = &#39;GCI&#39;;
+var NBR = &#39;NBR&#39;;
+var SIPI = &#39;SIPI&#39;;
+var LAI = &#39;LAI&#39;;
+var RECI = &#39;RECI&#39;;
+var GNDWI = &#39;GNDVI&#39;;
+var NDWI = &#39;NDWI&#39;;
+// var GREATER_THAN = &#39;Greater than&#39;;
+// var LESS_THAN = &#39;Less than&#39;;
+// // создали пустой список
+// var constraints = [];
+//Загрузили датасет
+var dataset = ee.ImageCollection(&quot;MODIS/006/MOD09A1&quot;)
+//Создаем поле для дат
+var name_data = ui.Label(
+{ value:&#39;Выберите даты для фильтрации коллекции&#39;,
+style: {fontWeight: &#39;bold&#39;, textAlign: &#39;left&#39;, stretch: &#39;horizontal&#39;}})
+var lblstartDate = ui.Label({
+value:&#39;Укажите дату начала фильтрации. Пример: 2021-05-01&#39;,
+style: {textAlign: &#39;left&#39;, stretch: &#39;horizontal&#39;}});
+var startDate = ui.Textbox({
+value: &#39;2021-05-01&#39;,
+style: {textAlign:&#39;center&#39;,stretch:&#39;horizontal&#39;},
+//здесь обратному вызову передается текст, который указан
+onChange: date
+});
+var lblendDate = ui.Label(
+{
+value:&#39;Укажите дату окончания фильтрации. Пример: 2021-08-31&#39;,
+style: {textAlign: &#39;left&#39;, stretch: &#39;horizontal&#39;}}
+);
+
+var endDate = ui.Textbox({
+value: &#39;2021-08-31&#39;,
+style: {textAlign:&#39;center&#39;,stretch:&#39;horizontal&#39;, margin:&#39;5px&#39;},
+//здесь обратному вызову передается текст, который указан
+onChange: date
+});
+var button = ui.Button(
+{label : &#39;Загрузить&#39;,
+onClick: date }
+)
+//Функция фильтрации по дате
+function date() {
+var sDate = startDate.getValue();
+var eDate = endDate.getValue();
+var modis = dataset.filterDate(sDate, eDate)
+print(modis)
+Map.addLayer(modis)
+return modis
+}
+var palettes = require(&#39;users/gena/packages:palettes&#39;);
+var modis_date = date()
+panel =
+panel.add(name_data).add(lblstartDate).add(startDate).add(lblendDate).add(endDate).add(but
+ton)
+// //Определили дату старта и конца
+// var modis_date = dataset.filterDate(&#39;2011-01-01&#39;, &#39;2021-01-01&#39;)
+// var modis_date = modis_date.filter(ee.Filter.calendarRange(5, 8,&#39;month&#39;))
+// каналы который мы будем использовать (ИЗМЕНИТЬ ЕСЛИ КАНАЛЫ ДРУГИЕ)
+
+var modisBands =
+[&#39;sur_refl_b03&#39;,&#39;sur_refl_b04&#39;,&#39;sur_refl_b01&#39;,&#39;sur_refl_b02&#39;,&#39;sur_refl_b06&#39;,&#39;sur_refl_b07&#39;];
+var lsBands = [&#39;blue&#39;,&#39;green&#39;,&#39;red&#39;,&#39;nir&#39;,&#39;swir1&#39;,&#39;swir2&#39;];
+
+/*============================= ОБЛАКА
+=============================================================*/
+// функция для побитового извелечения
+function getQABits(modis_date, start, end, newName) {
+// Compute the bits we need to extract.
+var pattern = 0;
+for (var i = start; i &lt;= end; i++) {
+pattern += Math.pow(2, i);
+}
+// Return a single band image of the extracted QA bits, giving the band
+// a new name.
+return modis_date.select([0], [newName])
+.bitwiseAnd(pattern)
+.rightShift(start);
+}
+// A function to mask out cloudy pixels.
+function maskQuality(image) {
+// ПОСМОТРЕТЬ КАК НАЗЫВАЕТСЯ КАНАЛ QA (ЕСЛИ НОВАЯ КОЛЛЕЦИЯ)
+var QA = image.select(&#39;StateQA&#39;);
+// Get the internal_cloud_algorithm_flag bit.
+var internalQuality = getQABits(QA,8, 13, &#39;internal_quality_flag&#39;);
+// Return an image masking out cloudy areas.
+return image.updateMask(internalQuality.eq(0));
+}
+// create cloud free composite
+var noCloud = modis_date.map(maskQuality).select(modisBands,lsBands);
+// create composite with clouds
+var Cloud = modis_date.select(modisBands,lsBands);
+// vis parameters
+var visParams = {bands:[&#39;red&#39;,&#39;green&#39;,&#39;blue&#39;],min:0,max:3000,gamma:1.3};
+//снимок без облаков
+var noCloud_collection = noCloud.mosaic()
+//каналы (ИЗМЕНИТЬ ЕСЛИ ДРУГАЯ КОЛЛЕЦИЯ)
+var blue = noCloud_collection.select(&#39;sur_refl_b03&#39;)
+var green = noCloud_collection.select(&#39;green&#39;)
+var red = noCloud_collection.select(&#39;red&#39;)
+var nir = noCloud_collection.select(&#39;nir&#39;)
+
+var swir1 = noCloud_collection.select(&#39;swir1&#39;)
+var swir2 = noCloud_collection.select(&#39;swir2&#39;)
+
+//LAI
+function addLAI(noCloud_collection){
+var lai = noCloud_collection.expression(
+&#39;3.618 * (2.5 * (N - R) / (N + 6*R - 7.5*B + 1)) * 0.118&#39;, {
+&#39;N&#39;: noCloud_collection.select(&#39;nir&#39;),
+&#39;R&#39;: noCloud_collection.select(&#39;red&#39;),
+&#39;B&#39;: noCloud_collection.select(&#39;blue&#39;),
+&#39;G&#39;: noCloud_collection.select(&#39;green&#39;)
+});
+var lai = lai.rename(&quot;LAI&quot;)
+var noCloud_collection_indexes = noCloud_collection.addBands(lai)
+return noCloud_collection_indexes
+}
+//NDVI
+function addNDVI(noCloud_collection) {
+var ndvi = noCloud_collection.normalizedDifference([&#39;nir&#39;,&#39;red&#39;]).rename(&#39;NDVI&#39;);
+var noCloud_collection_indexes = noCloud_collection.addBands(ndvi)
+return noCloud_collection_indexes; }
+//NDWI
+function addNDWI(noCloud_collection){
+var ndwi = noCloud_collection.expression(
+&#39;(G-N)/(G+N)&#39;, {
+&#39;N&#39;: noCloud_collection.select(&#39;nir&#39;),
+&#39;R&#39;: noCloud_collection.select(&#39;red&#39;),
+&#39;B&#39;: noCloud_collection.select(&#39;blue&#39;),
+&#39;G&#39;: noCloud_collection.select(&#39;green&#39;)
+});
+var ndwi = ndwi.rename(&quot;NDWI&quot;)
+var noCloud_collection_indexes = noCloud_collection.addBands(ndwi)
+return noCloud_collection_indexes; }
+//MSAVI
+function addMSAVI(noCloud_collection){
+var savi = noCloud_collection.expression(
+&#39;(1/2)*(2 *(N+1)- sqrt((2*N + 1)*(2*N + 1)- 8*(N-R)))&#39;, {
+&#39;N&#39;: noCloud_collection.select(&#39;nir&#39;),
+&#39;R&#39;: noCloud_collection.select(&#39;red&#39;),
+&#39;B&#39;: noCloud_collection.select(&#39;blue&#39;),
+&#39;G&#39;: noCloud_collection.select(&#39;green&#39;)
+});
+var savi = savi.rename(&quot;MSAVI&quot;)
+var noCloud_collection_indexes = noCloud_collection.addBands(savi)
+return noCloud_collection_indexes; }
+//ARVI
+
+function addARVI(noCloud_collection){
+var arvi = noCloud_collection.expression(
+&#39;(N-(2*R)+B)/(N+2*R+B)&#39;, {
+&#39;N&#39;: noCloud_collection.select(&#39;nir&#39;),
+&#39;R&#39;: noCloud_collection.select(&#39;red&#39;),
+&#39;B&#39;: noCloud_collection.select(&#39;blue&#39;),
+&#39;G&#39;: noCloud_collection.select(&#39;green&#39;)
+});
+var arvi = arvi.rename(&quot;ARVI&quot;)
+var noCloud_collection_indexes = noCloud_collection.addBands(arvi)
+return noCloud_collection_indexes; }
+//EVI
+function addEVI(noCloud_collection) {
+var evi = noCloud_collection.expression(
+&#39;2.5 * ((nir - red) / (nir + 6 * red - 7.5 * blue + 1))&#39;,
+{
+&#39;nir&#39;: noCloud_collection.select(&#39;nir&#39;),
+&#39;red&#39;: noCloud_collection.select(&#39;red&#39;),
+&#39;blue&#39;: noCloud_collection.select(&#39;blue&#39;)
+}
+)
+var evi = evi.rename(&quot;EVI&quot;)
+var noCloud_collection_indexes = noCloud_collection.addBands(evi)
+return noCloud_collection_indexes;
+}
+//NBR
+function addNBR(noCloud_collection){
+var nbr = noCloud_collection.expression(
+&#39;(N-S)/(N+S)&#39;, {
+&#39;N&#39;: noCloud_collection.select(&#39;nir&#39;),
+&#39;R&#39;: noCloud_collection.select(&#39;red&#39;),
+&#39;B&#39;: noCloud_collection.select(&#39;blue&#39;),
+&#39;G&#39;: noCloud_collection.select(&#39;green&#39;),
+&#39;S&#39;: noCloud_collection.select(&#39;swir2&#39;)
+});
+var nbr = savi.rename(&quot;NBR&quot;)
+var noCloud_collection_indexes = noCloud_collection.addBands(nbr)
+return noCloud_collection_indexes; }
+//GCI
+function addGCI(noCloud_collection){
+var gci = noCloud_collection.expression(
+&#39;N/(G-1)&#39;, {
+&#39;N&#39;: noCloud_collection.select(&#39;nir&#39;),
+&#39;R&#39;: noCloud_collection.select(&#39;red&#39;),
+&#39;B&#39;: noCloud_collection.select(&#39;blue&#39;),
+&#39;G&#39;: noCloud_collection.select(&#39;green&#39;),
+
+});
+var gci = gci.rename(&quot;GCI&quot;)
+var noCloud_collection_indexes = noCloud_collection.addBands(gci)
+return noCloud_collection_indexes; }
+//SIPI
+function addSIPI(noCloud_collection){
+var nbr = noCloud_collection.expression(
+&#39;(N-B)/(N-R)&#39;, {
+&#39;N&#39;: noCloud_collection.select(&#39;nir&#39;),
+&#39;R&#39;: noCloud_collection.select(&#39;red&#39;),
+&#39;B&#39;: noCloud_collection.select(&#39;blue&#39;),
+&#39;G&#39;: noCloud_collection.select(&#39;green&#39;),
+&#39;S&#39;: noCloud_collection.select(&#39;swir1&#39;)
+});
+var sipi = gci.rename(&quot;SIPI&quot;)
+var noCloud_collection_indexes = noCloud_collection.addBands(sipi)
+return noCloud_collection_indexes; }
+//ReCI
+function addReCI(noCloud_collection){
+var reci = noCloud_collection.expression(
+&#39;(N/R)-1&#39;, {
+&#39;N&#39;: noCloud_collection.select(&#39;nir&#39;),
+&#39;R&#39;: noCloud_collection.select(&#39;red&#39;),
+&#39;B&#39;: noCloud_collection.select(&#39;blue&#39;),
+&#39;G&#39;: noCloud_collection.select(&#39;green&#39;),
+&#39;S&#39;: noCloud_collection.select(&#39;swir1&#39;)
+});
+var reci = reci.rename(&quot;RECI&quot;)
+var noCloud_collection_indexes = noCloud_collection.addBands(reci)
+return noCloud_collection_indexes; }
+//GNDVI
+function addGNDVI(noCloud_collection){
+var gndvi = noCloud_collection.expression(
+&#39;(N-G)/(N+G)&#39;, {
+&#39;N&#39;: noCloud_collection.select(&#39;nir&#39;),
+&#39;R&#39;: noCloud_collection.select(&#39;red&#39;),
+&#39;B&#39;: noCloud_collection.select(&#39;blue&#39;),
+&#39;G&#39;: noCloud_collection.select(&#39;green&#39;),
+&#39;S&#39;: noCloud_collection.select(&#39;swir1&#39;)
+});
+var gndvi = gndvi.rename(&quot;GNDVI&quot;)
+var noCloud_collection_indexes = noCloud_collection.addBands(gndvi)
+return noCloud_collection_indexes; }
+/*=================================================================
+===========================================*/
+
+/*============================================ ВИЗУАЛИЗАЦИЯ
+==================================================*/
+//ReCI
+var VisReCI = {
+min: 0,
+max: 13,
+palette: [
+&#39;#04123C&#39;, &#39;#D9CEC2&#39; , &#39;#957744&#39;, &#39;#8CB00F&#39;, &#39;#096404&#39;, &#39;#042204&#39;,
+],
+};
+//NDWI
+var VisNDWI = {
+min: -1,
+max: 1,
+palette:
+[&#39;#ffffd9&#39;,&#39;#edf8b1&#39;,&#39;#c7e9b4&#39;,&#39;#7fcdbb&#39;,&#39;#41b6c4&#39;,&#39;#1d91c0&#39;,&#39;#225ea8&#39;,&#39;#253494&#39;,&#39;#081d58&#39;]
+,
+};
+//GNDVI
+var VisGNDVI = {
+min: 0,
+max: 1,
+palette: [
+&#39;#04123C&#39;, &#39;#D9CEC2&#39; , &#39;#957744&#39;, &#39;#8CB00F&#39;, &#39;#096404&#39;, &#39;#042204&#39;,
+],
+};
+//LAI
+var palettess = palettes.cmocean.Speed[7];
+var VisLAI = {
+min: 0,
+max: 1,
+palette: palettess
+// palette: [
+// &#39;#04123C&#39;, &#39;#D9CEC2&#39; , &#39;#957744&#39;, &#39;#8CB00F&#39;, &#39;#096404&#39;, &#39;#042204&#39;,
+// ],
+};
+//NDVI
+var VisNDVI = {
+min: -1,
+max: 1,
+palette: [ &#39;#04123C&#39;, &#39;#D9CEC2&#39; , &#39;#957744&#39;, &#39;#8CB00F&#39;, &#39;#096404&#39;, &#39;#042204&#39;
+],
+};
+//MSAVI
+var VisSAVI = {
+min: -1,
+
+
+max: 1,
+palette: [
+&#39;01665e&#39;, &#39;35978f&#39;, &#39;80cdc1&#39;, &#39;c7eae5&#39;, &#39;f6e8c3&#39;, &#39;dfc27d&#39;, &#39;bf812d&#39;,
+&#39;8c510a&#39;
+],
+};
+//ARVI
+var VisARVI = {
+min: -1,
+max: 1,
+palette: [
+&#39;2166ac&#39;, &#39;4393c3&#39;, &#39;92c5de&#39;, &#39;d1e5f0&#39;, &#39;fddbc7&#39;, &#39;f4a582&#39;, &#39;d6604d&#39;,
+&#39;b2182b&#39;
+],
+};
+//EVI
+var VisEVI = {
+min: -1,
+max: 1.0,
+palette: [&#39;#d7191c&#39;,&#39;#fdae61&#39;,&#39;#ffffbf&#39;,&#39;#a6d96a&#39;,&#39;#1a9641&#39;]
+};
+//GCI
+var VisGCI = {
+min: 0,
+max: 5.0,
+palette:[&#39;#74add1&#39;,&#39;#abd9e9&#39;,&#39;#fdae61&#39;,&#39;#fee08b&#39;,&#39;#ffffbf&#39;,&#39;#d9ef8b&#39;,&#39;#a6d96a&#39;,&#39;#66bd63&#39;,&#39;#1a985
+0&#39;]
+};
+//NBR
+var palettess = palettes.colorbrewer.BrBG[9]
+var VisNBR = {
+min: 0,
+max: 1.0,
+palette: palettess
+//palette: [&#39;#d7191c&#39;,&#39;#fdae61&#39;,&#39;#ffffbf&#39;,&#39;#a6d96a&#39;,&#39;#1a9641&#39;]
+};
+//SIPI
+var VisSIPI = {
+min: 0,
+max: 2.0,
+palette: [
+&#39;FFFFFF&#39;, &#39;CE7E45&#39;, &#39;DF923D&#39;, &#39;F1B555&#39;, &#39;FCD163&#39;, &#39;99B718&#39;, &#39;74A901&#39;,
+&#39;66A000&#39;, &#39;529400&#39;, &#39;3E8601&#39;, &#39;207401&#39;, &#39;056201&#39;, &#39;004C00&#39;, &#39;023B01&#39;,
+// &#39;012E01&#39;, &#39;011D01&#39;, &#39;011301&#39;
+],
+};
+
+var collection_with_index = noCloud.map(addGNDVI);
+var gndvicol = collection_with_index.select(&#39;GNDVI&#39;)
+var gndvi = collection_with_index.select(&#39;GNDVI&#39;).median()
+var gndviVis = gndvi.visualize(VisGNDVI).clip(table)
+
+var collection_with_index = noCloud.map(addReCI);
+var recicol = collection_with_index.select(&#39;RECI&#39;)
+var reci = collection_with_index.select(&#39;RECI&#39;).median()
+var reciVis = reci.visualize(VisReCI).clip(table)
+var collection_with_index = noCloud.map(addNDVI);
+var ndvicol = collection_with_index.select(&#39;NDVI&#39;)
+var ndvi = collection_with_index.select(&#39;NDVI&#39;).median()
+var ndviVis = ndvi.visualize(VisNDVI).clip(table)
+
+var collection_with_index = noCloud.map(addLAI);
+var laicol = collection_with_index.select(&#39;LAI&#39;)
+var lai = collection_with_index.select(&#39;LAI&#39;).median()
+var laiVis = lai.visualize(VisLAI).clip(table)
+
+var collection_with_index = noCloud.map(addNDWI);
+var ndwicoll = collection_with_index.select(&#39;NDWI&#39;)
+var ndwi = collection_with_index.select(&#39;NDWI&#39;).median()
+var ndwiVis = ndwi.visualize(VisNDWI).clip(table)
+
+var collection_with_index = noCloud.map(addMSAVI);
+var savicol = collection_with_index.select(&#39;MSAVI&#39;)
+var savi = collection_with_index.select(&#39;MSAVI&#39;).median()
+var saviVis = savi.visualize(VisSAVI).clip(table)
+var collection_with_index = noCloud.map(addARVI);
+var arvicol = collection_with_index.select(&#39;ARVI&#39;)
+var arvi = collection_with_index.select(&#39;ARVI&#39;).median()
+var arviVis = arvi.visualize(VisARVI).clip(table)
+
+var collection_with_index = noCloud.map(addEVI);
+var evicol = collection_with_index.select(&#39;EVI&#39;)
+var evi = collection_with_index.select(&#39;EVI&#39;).median()
+var eviVis = savi.visualize(VisEVI).clip(table)
+var collection_with_index = noCloud.map(addGCI);
+var gcicol = collection_with_index.select(&#39;GCI&#39;)
+var gci = collection_with_index.select(&#39;GCI&#39;).median()
+var gciVis = gci.visualize(VisGCI).clip(table)
+var collection_with_index = noCloud.map(addNBR);
+var nbrcol = collection_with_index.select(&#39;NBR&#39;)
+var nbr = collection_with_index.select(&#39;NBR&#39;).median()
+var nbrVis = nbr.visualize(VisNBR).clip(table)
+
+var collection_with_index = noCloud.map(addSIPI);
+var sipicol = collection_with_index.select(&#39;SIPI&#39;)
+var sipi = collection_with_index.select(&#39;SIPI&#39;).median()
+var sipiVis = sipi.visualize(VisSIPI).clip(table)
+
+//создаем переменную - выбор индексов
+var select = ui.Select({
+//список опций для выбора
+items: [NDVI, MSAVI, ARVI, EVI, GCI, NBR, SIPI, LAI, RECI, GNDWI, NDWI, SIPI],
+//Заполнитель, отображаемый, когда значение не выбрано.
+placeholder: &#39;Выбор индекса. По умолчанию NDVI&#39;,
+//значение по умолчанию
+value: NDVI,
+//onChange - обратный вызов, срабатывает, когда выбрали значение.
+//передается текущее выбранное значение и данный виджет (в данном случае это
+redraw)
+onChange: redraw,
+});
+//добавили индекс на панель
+panel.add(ui.Label({
+value:&#39;Выбери индекс для отображения на карте:&#39;,
+style: {fontWeight: &#39;bold&#39;, textAlign: &#39;left&#39;, stretch: &#39;horizontal&#39;}})).add(select);
+
+//в redraw мы передали индекс который выбрали в данном виджете
+//добавили надпись
+panel.add(ui.Label({
+value:&#39;Выбери индекс(ы) для построения графика на карте:&#39;,
+style: {fontWeight: &#39;bold&#39;, textAlign: &#39;left&#39;, stretch: &#39;horizontal&#39;}}))
+
+
+panel.add(ui.Label(
+//value:
+&#39;Можно выбрать индексы (один или несколько). Кликнуть в любое место карты.
+Тогда отобразится среднее значение этих индексов за выбранный промежуток времени
+и построится график изменения индекса в безоблачные дни&#39;))
+//style: {fontWeight: &#39;bold&#39;, textAlign: &#39;left&#39;, stretch: &#39;horizontal&#39;}}));
+//создали переменную - отметка галочкой и добавили на панель
+var ndviCheck = ui.Checkbox(NDVI).setValue(true);
+panel.add(ndviCheck);
+var saviCheck = ui.Checkbox(MSAVI).setValue(false);
+panel.add(saviCheck);
+var arviCheck = ui.Checkbox(ARVI).setValue(false);
+panel.add(arviCheck);
+var eviCheck = ui.Checkbox(EVI).setValue(false);
+panel.add(eviCheck);
+var gciCheck = ui.Checkbox(GCI).setValue(false);
+panel.add(gciCheck);
+var nbrCheck = ui.Checkbox(NBR).setValue(false);
+panel.add(nbrCheck);
+var sipiCheck = ui.Checkbox(SIPI).setValue(false);
+panel.add(sipiCheck);
+var laiCheck = ui.Checkbox(LAI).setValue(false);
+panel.add(laiCheck);
+var reciCheck = ui.Checkbox(RECI).setValue(false);
+panel.add(reciCheck);
+var gndwiCheck = ui.Checkbox(GNDWI).setValue(false);
+panel.add(gndwiCheck);
+var ndwiCheck = ui.Checkbox(NDWI).setValue(false);
+panel.add(ndwiCheck);
+/*=================================================================
+===========================================*/
+/*================================= ДОБАВЛЕНИЕ ПАНЕЛИ НА КАРТУ
+(ДАЛЕЕ ДЛЯ ПОКАЗА ЗНАЧЕНИЙ ИНДЕКСОВ
+=========================================*/
+
+var panelchart = ui.Panel({style: {width: &#39;400px&#39; , position: &#39;bottom-center&#39;, shown:false
+}})
+//.add(ui.Label(&#39;Кликните на карту для получения значения индекса и построения
+графика&#39;));
+map.add(panelchart)
+// ui.Panel - создат панель
+// shown: false - заранее панель скрыта
+var inspector = ui.Panel({style: {position: &#39;bottom-left&#39;, shown: false}});
+
+// добавили данную панель на карту
+map.add(inspector);
+/*=================================================================
+===========================================*/
+/*============================================ ФУНКЦИЯ ДЛЯ ЧТЕНИЯ
+КООРДИНАТ С КАРТЫ =========================================*/
+
+// map.onClick - регистрирует вызов по карте
+//возвращает функцию обратного вызова
+map.onClick(function(coords) {
+// регистрируем координаты
+var point = ee.Geometry.Point(coords.lon, coords.lat);
+print(point)
+//объединяем изображения в скобках в одно изображение
+var sample = ee.Image.cat(ndvi, ndwi, savi, arvi, evi, gci, nbr, sipi, lai, reci)
+//.unmask(0) - заменяет маску входного изображения выходным, где маска входного
+равна нулю
+//.sample - выбираем выбранные в point пиксели и возвращает их как FeatureCollection.
+//.first() - возвращает первую запись из данной коллекции
+// .toDictionary() - извлекаем свойства объекта
+.unmask(0).sample(point, 30).first().toDictionary();
+// извлекаем свойства из полученного словаря и передаем их функции как аргумент
+values
+sample.evaluate(function(values) {
+//очиащаем панель
+inspector.clear();
+panelchart.clear()
+//если кнопка ndviCheck
+if (ndviCheck.getValue()) {
+//на панель добавляется надпсиь NDVI и значение ндви
+inspector.add(ui.Label(&#39;NDVI: &#39; + values.NDVI ));
+panelchart.add(ui.Chart.image.series(ndvicol, point, ee.Reducer.mean(), 200)
+.setOptions({
+title: &#39;NDVI Over Time&#39;,
+vAxis: {title: &#39;NDVI&#39;},
+lineWidth: 1,
+pointSize: 3,
+}))
+//panelchart.add(chart)
+}
+if (saviCheck.getValue()) {
+inspector.add(ui.Label(&#39;MSAVI: &#39; + values.MSAVI));
+//panelchart.clear();
+
+var chart = ui.Chart.image.series(savicol, point, ee.Reducer.mean(), 200)
+.setOptions({
+title: &#39;MSAVI Over Time&#39;,
+vAxis: {title: &#39;MSAVI&#39;},
+lineWidth: 1,
+pointSize: 3,
+});
+panelchart.add(chart)
+}
+if (arviCheck.getValue()) {
+inspector.add(ui.Label(&#39;ARVI: &#39; + values.ARVI));
+//panelchart.clear();
+var chart = ui.Chart.image.series(arvicol, point, ee.Reducer.mean(), 200)
+.setOptions({
+title: &#39;ARVI Over Time&#39;,
+vAxis: {title: &#39;ARVI&#39;},
+lineWidth: 1,
+pointSize: 3,
+});
+panelchart.add(chart)
+}
+if (eviCheck.getValue()) {
+inspector.add(ui.Label(&#39;EVI: &#39; + values.EVI));
+//panelchart.clear();
+var chart = ui.Chart.image.series(evicol, point, ee.Reducer.mean(), 200)
+.setOptions({
+title: &#39;EVI Over Time&#39;,
+vAxis: {title: &#39;EVI&#39;},
+lineWidth: 1,
+pointSize: 3,
+});
+panelchart.add(chart)
+}
+if (gciCheck.getValue()) {
+inspector.add(ui.Label(&#39;GCI: &#39; + values.GCI));
+//panelchart.clear();
+var chart = ui.Chart.image.series(gcicol, point, ee.Reducer.mean(), 200)
+.setOptions({
+title: &#39;GCI Over Time&#39;,
+vAxis: {title: &#39;GCI&#39;},
+lineWidth: 1,
+pointSize: 3,
+});
+panelchart.add(chart)
+
+}
+if (nbrCheck.getValue()) {
+inspector.add(ui.Label(&#39;NBR: &#39; + values.NBR));
+//panelchart.clear();
+var chart = ui.Chart.image.series(nbrcol, point, ee.Reducer.mean(), 200)
+.setOptions({
+title: &#39;NBR Over Time&#39;,
+vAxis: {title: &#39;NBR&#39;},
+lineWidth: 1,
+pointSize: 3,
+});
+panelchart.add(chart)
+}
+if (sipiCheck.getValue()) {
+inspector.add(ui.Label(&#39;SIPI: &#39; + values.SIPI));
+//panelchart.clear();
+var chart = ui.Chart.image.series(sipicol, point, ee.Reducer.mean(), 200)
+.setOptions({
+title: &#39;SIPI Over Time&#39;,
+vAxis: {title: &#39;SIPI&#39;},
+lineWidth: 1,
+pointSize: 3,
+});
+panelchart.add(chart)
+}
+if (laiCheck.getValue()) {
+inspector.add(ui.Label(&#39;LAI: &#39; + values.LAI));
+//panelchart.clear();
+var chart = ui.Chart.image.series(laicol, point, ee.Reducer.mean(), 200)
+.setOptions({
+title: &#39;LAI Over Time&#39;,
+vAxis: {title: &#39;LAI&#39;},
+lineWidth: 1,
+pointSize: 3,
+});
+panelchart.add(chart)
+}
+if (reciCheck.getValue()) {
+inspector.add(ui.Label(&#39;RECI: &#39; + values.RECI));
+//panelchart.clear();
+var chart = ui.Chart.image.series(recicol, point, ee.Reducer.mean(), 200)
+
+
+.setOptions({
+title: &#39;RECI Over Time&#39;,
+vAxis: {title: &#39;RECI&#39;},
+lineWidth: 1,
+pointSize: 3,
+});
+panelchart.add(chart)
+}
+if (gndwiCheck.getValue()) {
+inspector.add(ui.Label(&#39;GNDVI: &#39; + values.GNDVI));
+panelchart.clear();
+var chart = ui.Chart.image.series(gndwicol, point, ee.Reducer.mean(), 200)
+.setOptions({
+title: &#39;GNDVI Over Time&#39;,
+vAxis: {title: &#39;GNDVI&#39;},
+lineWidth: 1,
+pointSize: 3,
+});
+panelchart.add(chart)
+}
+if (ndwiCheck.getValue()) {
+inspector.add(ui.Label(&#39;NDWI: &#39; + values.NDWI));
+panelchart.clear();
+var chart = ui.Chart.image.series(ndwicol, point, ee.Reducer.mean(), 200)
+.setOptions({
+title: &#39;NDWI Over Time&#39;,
+vAxis: {title: &#39;NDWI&#39;},
+lineWidth: 1,
+pointSize: 3,
+});
+panelchart.add(chart)
+}
+//Добавляем кнопку знакрытия с функций срыть панель
+inspector.add(ui.Button(&#39;Закрыть&#39;, function() {
+inspector.style().set({shown: false});
+}));
+//показываем снова меню
+inspector.style().set({shown: true});
+//Добавляем кнопку знакрытия с функций срыть панель
+panelchart.add(ui.Button(&#39;Закрыть&#39;, function() {
+panelchart.style().set({shown: false});
+
+
+}));
+//показываем снова меню
+panelchart.style().set({shown: true})
+
+});
+
+});
+
+function redraw() {
+//map.layers() - возвращает список слоев, связанных с картой
+//.reset() - заменяет все слои новых списком
+map.layers().reset();
+//возвращаем переменную, которая возвращаем текущеее выбранное значение
+var layer = select.getValue();
+//задаем переменнюу image
+var image;
+if (layer == NDVI) {
+image = ndviVis;
+var palette = [&#39;#04123C&#39;, &#39;#D9CEC2&#39; , &#39;#957744&#39;, &#39;#8CB00F&#39;, &#39;#096404&#39;, &#39;#042204&#39;]
+var mini = -1
+var maxi = 1
+var label = &#39;NDVI&#39;
+var name = &#39;Нормализованный Разностный Вегетационный Индекс &#39;
+var text = &#39;Подходит для отслеживания динамики развития cельскохозяйственных
+культур&#39;
+var formula = &#39;NDVI = (NIR – RED) / (NIR + RED)&#39;
+var property = &#39;Можно использовать на протяжении всего сезона выращивания
+культур. &#39;
+//NDVI дает самые точные результаты в середине сезона, в период наиболее
+активного развития вегетации
+var box = [-1, 10, 1, 5]
+var collection = ndvicol
+
+} else if (layer == MSAVI) {
+image = saviVis;
+var palette = [&#39;01665e&#39;, &#39;35978f&#39;, &#39;80cdc1&#39;, &#39;c7eae5&#39;, &#39;f6e8c3&#39;, &#39;dfc27d&#39;, &#39;bf812d&#39;,&#39;8c510a&#39;]
+var mini = -1
+var maxi = 1
+
+var label = &#39;MSAVI&#39;
+var name = &#39;Модифицированный Почвенный Вегетационный Индекс&#39;
+var formula = &#39;(2 *RED + 1 – sqrt((2*RED + 1)2 – 8 * (RED – NIR))) / 2&#39;
+var text = &#39;Разработан с целью уменьшения влияния почвенных шумов на
+результаты мониторинга. Применяют при отсутствии почвенного покрова, скудной
+вегетации или низком содержании хлорофилла в растениях.&#39;
+var property = &#39;Индекс можно использовать для наблюдения за вегетацией на ранних
+стадиях развития, данный вегетационный индекс показателен даже при
+незначительном растительном покрове.&#39;
+var box = [-1, 10, 1, 5]
+
+} else if (layer == NDWI) {
+image = ndwiVis;
+var palette =
+[&#39;#ffffd9&#39;,&#39;#edf8b1&#39;,&#39;#c7e9b4&#39;,&#39;#7fcdbb&#39;,&#39;#41b6c4&#39;,&#39;#1d91c0&#39;,&#39;#225ea8&#39;,&#39;#253494&#39;,&#39;#081d58&#39;]
+var mini = -1
+var maxi = 1
+var label = &#39;NDWI&#39;
+var name = &#39;Нормализованный Разностный Водный Индекс&#39;
+var formula = &#39;NDWI = (GREEN – NIR) / (GREEN + NIR)&#39;
+var text = &#39;Индекс NDWI необходим для исследования водных объектов &#39;
+var property = &#39;Используется для обнаружения затопленных сельскохозяйственных
+земель, выявления наводнений на полях, мониторинга эффективности ирригации,
+определения заболоченных территорий.&#39;
+var box = [-1, 0, 1, 0.2]
+} else if (layer == ARVI) {
+image = arviVis;
+var palette = [
+&#39;2166ac&#39;, &#39;4393c3&#39;, &#39;92c5de&#39;, &#39;d1e5f0&#39;, &#39;fddbc7&#39;, &#39;f4a582&#39;, &#39;d6604d&#39;,
+&#39;b2182b&#39;
+]
+var mini = -1
+var maxi = 1
+var label = &#39;ARVI&#39;
+var name = &#39;Атмосфероустойчивый Вегетационный Индекс &#39;
+var formula = &#39;ARVI = (NIR – (2 * RED) + BLUE) / (NIR + (2 * RED) + BLUE)&#39;
+var text = &#39;Особенность в том, что вегетационный индекс не подвержен влиянию
+атмосферных факторов (например, аэрозолей) и не зависит от топографических
+особенностей&#39;
+var property = &#39;Используется: для наблюдения за регионами с высокой
+концентрацией атмосферных аэрозолей (дождей, тумана, пыли, дыма, загрязнения
+воздуха)&#39;
+var box = [-1, 10, 1, 5]
+
+} else if (layer == EVI) {
+image = eviVis;
+//var palette = palettes.cmocean.Speed[7]
+var palette = [&#39;#d7191c&#39;,&#39;#fdae61&#39;,&#39;#ffffbf&#39;,&#39;#a6d96a&#39;,&#39;#1a9641&#39;]
+var mini = -1
+var maxi = 1
+var label = &#39;EVI&#39;
+var name = &#39;Усовершенствованный Вегетационный Индекс&#39;
+var formula = &#39;EVI = 2.5 * ((NIR – RED) / ((NIR) + (C1 * RED) – (C2 * BLUE) + L))&#39;
+var text = &#39;Вегетационный индекс, который корректирует результаты NDVI&#39;
+var property = &#39;Шкала EVI варьируется от –1 до +1; для здоровой растительности
+показатель колеблется в пределах 0,2–0,8. Используется: для анализа вегетации в
+регионах Земли с большим количеством хлорофилла (например, дождевых лесах).&#39;
+var box = [-1, 10, 1, 1]
+
+} else if (layer == GCI) {
+image = gciVis;
+var palette = [&#39;#d7191c&#39;,&#39;#fdae61&#39;,&#39;#ffffbf&#39;,&#39;#a6d96a&#39;,&#39;#1a9641&#39;]
+var mini = -2
+var maxi = 2
+var label = &#39;GCI&#39;
+var name = &#39;Зеленый Вегетационный Индекс Хлорофилла&#39;
+var formula = &#39;GCI = NIR / GREEN – 1&#39;
+var text = &#39;Содержание хлорофилла отражает физиологическое состояние вегетации.
+Если растения подвержены стрессу, этот показатель снижается, поэтому GCI можно
+использовать в качестве индикатора здоровья растений.&#39;
+var property = &#39;Используется для мониторинга влияния сезонности, экологических
+стрессов или применяемых пестицидов на здоровье посевов.&#39;
+var box = [-2, 0, 2, 0.2]
+} else if (layer == NBR) {
+image = nbrVis;
+var palette = palettes.colorbrewer.BrBG[9]
+var mini = -1
+var maxi = 1
+var label = &#39;NBR&#39;
+var name = &#39;Нормализованный Коэффициент Выгорания&#39;
+var formula = &#39;NBR = (NIR – SWIR) / (NIR + SWIR)&#39;
+var text = &#39;Индекс используют для выделения территорий, выгоревших в результате
+пожара&#39;
+var property = &#39;NBR обычно применяют в сельском хозяйстве и лесоводстве для
+обнаружения происходящих пожаров, анализа силы пожара и мониторинга вегетации,
+уцелевшей после пожара.&#39;
+var box = [-1, 0, 1, 0.2]
+
+} else if (layer == SIPI) {
+image = sipiVis;
+var palette = [
+&#39;FFFFFF&#39;, &#39;CE7E45&#39;, &#39;DF923D&#39;, &#39;F1B555&#39;, &#39;FCD163&#39;, &#39;99B718&#39;, &#39;74A901&#39;,
+&#39;66A000&#39;, &#39;529400&#39;, &#39;3E8601&#39;, &#39;207401&#39;, &#39;056201&#39;, &#39;004C00&#39;, &#39;023B01&#39;,
+&#39;012E01&#39;, &#39;011D01&#39;, &#39;011301&#39;
+]
+var mini = 0
+var maxi = 2
+var label = &#39;SIPI&#39;
+var name = &#39;Структурный Индекс Интенсивности Пигментов&#39;
+var formula = &#39;SIPI = (NIR – BLUE) / (NIR – RED)&#39;
+var text = &#39;Индекс подходит для анализа вегетации с различной структурой.&#39;
+var property = &#39;Используется для мониторинга состояния растений на территории с
+большим разнообразием видов растительности, для обнаружения ранних признаков
+болезней растений или других факторов вегетационного стресса.&#39;
+var box = [0, 1, 2, 0.2]
+
+} else if (layer == LAI) {
+image = laiVis;
+var palette = palettes.cmocean.Speed[7];
+// var palette = [
+// &#39;#04123C&#39;, &#39;#D9CEC2&#39; , &#39;#957744&#39;, &#39;#8CB00F&#39;, &#39;#096404&#39;, &#39;#042204&#39;,
+// ]
+var mini = 0
+var maxi = 1
+var label = &#39;LAI&#39;
+var name = &#39;Индекс Листовой Поверхности &#39;
+var property = &#39;Когда используется: для анализа состояния культур, а также как
+вводный параметр для модели прогнозирования продуктивности. В отличие от NDVI
+учитывает топографические особенности&#39;
+var text = &#39;Индекс разработан для анализа листовой поверхности нашей планеты и
+анализирует количество листьев на определенной территории&#39;
+var formula= &#39;Рассчитывается как отношение односторонней (освещенной) площади
+листьев к занимаемой ими поверхности почвы.&#39;
+var box = [0, 0, 1, 0.2]
+} else if (layer == RECI) {
+image = reciVis;
+var palette = [
+&#39;#04123C&#39;, &#39;#D9CEC2&#39; , &#39;#957744&#39;, &#39;#8CB00F&#39;, &#39;#096404&#39;, &#39;#042204&#39;,
+]
+var mini = -1
+var maxi = 5
+var label = &#39;ReCI&#39;
+
+var name = &#39;Хлорофильный Red Edge Индекс&#39;
+var formula = &#39;ReCI = (NIR / RED) – 1&#39;
+var text = &#39;ReCI показывает фотосинтетическую активность вегетационного
+покрова.&#39;
+var property = &#39;ReCI наиболее показателен во время активного развития вегетации и
+не подходит для мониторинга растительности во время сбора урожая.&#39;
+var box = [-1, 0, 5, 0.2]
+}
+else if (layer == GNDVI) {
+image = gndviVis;
+var palette = [
+&#39;FFFFFF&#39;, &#39;CE7E45&#39;, &#39;DF923D&#39;, &#39;F1B555&#39;, &#39;FCD163&#39;, &#39;99B718&#39;, &#39;74A901&#39;,
+&#39;66A000&#39;, &#39;529400&#39;, &#39;3E8601&#39;, &#39;207401&#39;, &#39;056201&#39;, &#39;004C00&#39;, &#39;023B01&#39;,
+&#39;012E01&#39;, &#39;011D01&#39;, &#39;011301&#39;
+]
+var mini = -1
+var maxi =1
+var label = &#39;GNDVI&#39;
+var name = &#39;Зеленый Нормализованный Разностный Вегетационный Индекс &#39;
+var formula = &#39;GNDVI = (NIR – GREEN) / (NIR + GREEN)&#39;
+var text = &#39;GNDVI измеряет содержание хлорофилла в растениях точнее, чем NDVI.&#39;
+var property = &#39;Используется для обнаружения увядших или дозревающих культур
+при отсутствии крайнего красного канала; для мониторинга вегетации с высокой
+густотой покрова или на стадии дозревания культур.&#39;
+var box = [-1, 0, 1, 0.2]
+}
+//добавили слой
+;
+var legendPanel = ui.Panel({
+style: {position: &#39;bottom-right&#39;, width: &#39;250px&#39;,padding: &#39;8px 15px&#39;}
+})
+
+//фунукция которая возвращает панель с легендой
+function index_info(titleText, palette, min, max) {
+// Legend Title
+var big_name = ui.Label({
+value: name,
+style: {fontWeight: &#39;bold&#39;, textAlign: &#39;left&#39;, stretch: &#39;horizontal&#39;}});
+var title = ui.Label({
+value: titleText,
+style: {fontWeight: &#39;bold&#39;, textAlign: &#39;left&#39;, stretch: &#39;horizontal&#39;}});
+var opisanie = ui.Label({
+value: text,
+
+
+style: {textAlign: &#39;left&#39;, stretch: &#39;horizontal&#39;}});
+var titleText = &#39;Формула&#39;
+var mean_for = &#39;Для чего используется&#39;
+var mean_for_label = ui.Label({
+value: mean_for,
+style: {fontWeight: &#39;bold&#39;, textAlign: &#39;left&#39;, stretch: &#39;horizontal&#39;}});
+var mean_for_opisanie = ui.Label({
+value: property,
+style: {textAlign: &#39;left&#39;, stretch: &#39;horizontal&#39;}});
+var formula_shet = ui.Label({
+value: formula,
+style: {textAlign: &#39;left&#39;, stretch: &#39;horizontal&#39;}});
+var formula_name = ui.Label({
+value: titleText,
+style: {fontWeight: &#39;bold&#39;, textAlign: &#39;left&#39;, stretch: &#39;horizontal&#39;}});
+var info = ui.Label({
+value: label,
+style: {fontSize: &#39;24px&#39; , fontWeight: &#39;bold&#39;, textAlign: &#39;left&#39;, stretch: &#39;horizontal&#39;}});
+// Colorbar
+var legend = ui.Thumbnail({
+image: ee.Image.pixelLonLat().select(0),
+params: {
+// bbox: [-1, 0, 1, 0.2],
+bbox: box ,
+dimensions: &#39;200x20&#39;,
+format: &#39;png&#39;,
+min: mini,
+max: maxi,
+palette: palette },
+style: {stretch: &#39;horizontal&#39;, margin: &#39;8px 8px&#39;, maxHeight: &#39;40px&#39;},
+});
+// Legend Labels
+var labels = ui.Panel({
+widgets: [
+ui.Label(mini, {margin: &#39;4px 10px&#39;,textAlign: &#39;left&#39;, stretch: &#39;horizontal&#39;}),
+ui.Label((mini+maxi)/2, {margin: &#39;4px 20px&#39;, textAlign: &#39;center&#39;, stretch: &#39;horizontal&#39;}),
+ui.Label(maxi, {margin: &#39;4px 10px&#39;,textAlign: &#39;right&#39;, stretch: &#39;horizontal&#39;})],
+layout: ui.Panel.Layout.flow(&#39;horizontal&#39;)});
+// Create a panel with all widgets
+legendPanel.add(info)
+legendPanel.add(big_name)
+legendPanel.add(formula_name)
+legendPanel.add(formula_shet)
+legendPanel.add(mean_for_label)
+legendPanel.add(mean_for_opisanie)
+legendPanel.add(legend)
+
+
+legendPanel.add(labels)
+
+//Добавляем кнопку знакрытия с функций срыть панель
+legendPanel.add(ui.Button(&#39;Close&#39;, function() {
+legendPanel.style().set({shown: false});
+}));
+//показываем снова меню
+legendPanel.style().set({shown: true})
+return legendPanel
+
+}
+
+var colorBar = index_info(&#39;Значение индекса&#39;, palette, mini, maxi)
+map.add(colorBar)
+
+map.addLayer(image, {}, layer);
+
+}
+
+redraw();
